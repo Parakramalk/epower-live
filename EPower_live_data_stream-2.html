@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EV Charging Station - Live Monitor</title>
+<style>
+  :root{--bg:#050a18;--neon:#19b8ff;--txt:#eaf3ff;--mut:#8fa6c8;--ok:#2dff9b;--warn:#ffaa00;--err:#ff5468}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:radial-gradient(circle at 50% 0,#0a2a66 0,var(--bg) 55%) fixed;color:var(--txt);font-family:system-ui,-apple-system,'Segoe UI',Roboto,Arial,sans-serif;min-height:100vh}
+  .wrap{max-width:1100px;margin:0 auto;padding:16px}
+  header{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px;padding:12px 22px;margin-bottom:14px;border-radius:6px 6px 28px 28px;background:linear-gradient(180deg,#0b1b3f,#071329);border-bottom:2px solid var(--neon);box-shadow:0 8px 22px rgba(25,184,255,.2);transition:box-shadow .5s ease}
+  h1{font-size:clamp(18px,3vw,28px);font-weight:900;letter-spacing:.5px}h1 b{color:#2f6bff}
+  .chips{display:flex;flex-wrap:wrap;gap:8px}
+  .chip{display:flex;align-items:center;gap:8px;padding:6px 14px;border:1px solid #1b4f9c;border-radius:999px;font-size:13px;color:#c9d8ee;white-space:nowrap}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--ok);animation:pl 1.4s infinite}
+  .dot.off{background:var(--err);animation:none}
+  @keyframes pl{50%{opacity:.3}}
+  .card{background:rgba(10,21,48,.88);border:1px solid #1b4f9c;border-radius:20px;padding:22px;box-shadow:0 0 16px rgba(25,184,255,.18);min-width:0;transition:border-color .5s ease,box-shadow .5s ease,opacity .5s ease}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px}
+  .hd{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:14px}
+  .t{display:flex;align-items:center;gap:10px;font-size:13px;font-weight:800;letter-spacing:1.5px}
+  .t::before{content:"";width:4px;height:16px;border-radius:2px;background:var(--neon);box-shadow:0 0 8px var(--neon)}
+  /* centered card headings: glowing bar on both sides */
+  #pc .hd,#sc .hd{justify-content:center}
+  #pc .t::after,#sc .t::after{content:"";width:4px;height:16px;border-radius:2px;background:var(--neon);box-shadow:0 0 8px var(--neon)}
+  .l{font-size:12px;color:var(--mut)}
+  .gauge{display:block;width:100%;max-width:300px;margin:0 auto}
+  #sc{display:flex;flex-direction:column}
+  .mid{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;min-height:130px;margin:6px 0 18px}
+  .st{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .st>div{min-width:0;text-align:center;background:#060f26;border:1px solid #10264f;border-radius:12px;padding:12px 6px}
+  .st .v{font-size:clamp(20px,3vw,28px);font-weight:800;margin:4px 0;font-variant-numeric:tabular-nums}
+  .cust-status{font-size:38px;font-weight:800;letter-spacing:2px;margin:0 0 8px;transition:color .5s ease,text-shadow .5s ease}
+  .cust-idle{color:#00ff88;text-shadow:0 0 24px #00ff88,0 0 60px rgba(0,255,136,.4)}
+  .cust-charging{color:#00ccff;text-shadow:0 0 24px #00ccff,0 0 60px rgba(0,204,255,.4);animation:cpulse 2s infinite}
+  .cust-stopped{color:#ffaa00;text-shadow:0 0 24px #ffaa00,0 0 60px rgba(255,170,0,.4)}
+  .cust-off{color:#8899bb;text-shadow:0 0 16px rgba(136,153,187,.4)}
+  @keyframes cpulse{50%{opacity:.65}}
+  .th-ok{border-color:#2dff9b!important;box-shadow:0 0 30px rgba(45,255,155,.3)}.th-blue{border-color:#19b8ff!important;box-shadow:0 0 30px rgba(25,184,255,.35)}
+  .th-warn{border-color:#ffaa00!important;box-shadow:0 0 30px rgba(255,170,0,.3)}
+  .stale .st .v,.stale .gauge{opacity:.45}
+  .msg{text-align:center;font-size:15px;font-weight:600;color:var(--mut);min-height:20px}
+  canvas#trend{width:100%;height:220px;display:block}
+  .err{display:none;margin-top:14px;padding:12px 16px;border:1px solid var(--err);border-radius:12px;background:rgba(255,84,104,.1);font-size:14px;text-align:center}
+  footer{text-align:center;color:#5f7699;font-size:12px;margin-top:16px}
+  .scan{position:relative;display:inline-block;white-space:nowrap;color:#6f86aa}
+  .scan::before,.scan::after{content:attr(data-t);position:absolute;left:0;top:0;white-space:nowrap;pointer-events:none;color:transparent;
+    background:linear-gradient(90deg,transparent 0,transparent 42%,rgba(110,215,255,.55) 47%,#fff 50%,rgba(110,215,255,.55) 53%,transparent 58%,transparent 100%);
+    background-size:300% 100%;-webkit-background-clip:text;background-clip:text;animation:kr 2.2s ease-in-out infinite alternate}
+  .scan::after{filter:blur(5px) brightness(1.4)}
+  @keyframes kr{from{background-position:100% 0}to{background-position:0 0}}
+  @media(max-width:760px){.grid{grid-template-columns:1fr}.wrap{padding:10px}header{border-radius:6px 6px 20px 20px}}
+  /* v7.1: chart status colors with neon glow */
+.chart-legend{display:flex;gap:12px;justify-content:center;padding:8px;font-size:12px}
+.leg-item{display:flex;align-items:center;gap:6px}
+.leg-dot{width:12px;height:12px;border-radius:50%}
+.leg-normal{background:#22d3ee;box-shadow:0 0 8px #22d3ee,0 0 16px rgba(34,211,238,.5)}
+.leg-network{background:#fbbf24;box-shadow:0 0 8px #fbbf24,0 0 16px rgba(251,191,36,.5)}
+.leg-power{background:#ef4444;box-shadow:0 0 8px #ef4444,0 0 16px rgba(239,68,68,.5)}
+/* v7.1: PZEM pills with neon glow */
+.pzem-pills{display:flex;gap:6px;justify-content:center;flex-wrap:wrap;padding:10px 0 4px}
+.pzem-pill{background:rgba(15,42,92,.8);border:1px solid #2563eb;border-radius:16px;padding:6px 12px;
+  font-size:13px;font-weight:700;color:#7fd8ff;
+  box-shadow:0 0 10px rgba(37,99,235,.5),0 0 20px rgba(37,99,235,.2);
+  display:flex;align-items:center;gap:5px}
+.pzem-pill .lbl{font-size:10px;color:#8fa6c8;font-weight:600}
+.pzem-pill .val{font-size:15px;color:#fff;text-shadow:0 0 8px rgba(127,216,255,.9)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1><b>EV CHARGER</b> LIVE MONITOR</h1>
+    <div class="chips">
+      <span class="chip"><i class="dot off" id="dotc"></i><span id="statTxt" aria-live="polite">Connecting...</span></span>
+      <span class="chip" id="age">-</span>
+    </div>
+  </header>
+
+  <div class="grid">
+    <section class="card" id="pc">
+      <div class="hd"><div class="t">LIVE POWER</div></div>
+      <svg class="gauge" viewBox="0 0 220 210" role="img" aria-label="Live power gauge">
+        <path d="M26.9 158 A96 96 0 1 1 193.1 158" fill="none" stroke="#0b2a5e" stroke-width="7" stroke-linecap="round"/>
+        <path id="gArc" d="M26.9 158 A96 96 0 1 1 193.1 158" fill="none" stroke="#19b8ff" stroke-width="7" stroke-linecap="round" stroke-dasharray="0 402.1" style="filter:drop-shadow(0 0 6px #19b8ff) drop-shadow(0 0 14px rgba(25,184,255,.6))"/>
+        <g id="trail"></g>
+        <g id="ticks"></g>
+        <line id="beam" x1="110" y1="110" x2="190" y2="110" stroke="#7fd8ff" stroke-width="5" stroke-linecap="round" opacity=".85" style="filter:drop-shadow(0 0 4px #19b8ff) drop-shadow(0 0 10px #19b8ff) drop-shadow(0 0 18px rgba(25,184,255,.7))"/>
+        <circle cx="110" cy="110" r="8" fill="#0a1530" stroke="#19b8ff" stroke-width="2" style="filter:drop-shadow(0 0 6px #19b8ff)"/>
+        <circle id="head" cx="26.9" cy="158" r="6" fill="#d8f4ff" style="filter:drop-shadow(0 0 5px #19b8ff) drop-shadow(0 0 12px #19b8ff)"/>
+        <!-- value sits below the dial so it never overlaps the scale numbers -->
+        <text x="110" y="196" text-anchor="middle" font-size="30" font-weight="800" fill="#19b8ff" style="filter:drop-shadow(0 0 6px #19b8ff)"><tspan id="gW">-</tspan><tspan font-size="15" dx="5">W</tspan></text>
+      </svg>
+      <!-- v7.1: PZEM pills -->
+      <div class="pzem-pills">
+        <div class="pzem-pill"><span class="lbl">V</span><span class="val" id="pV">--</span></div>
+        <div class="pzem-pill"><span class="lbl">A</span><span class="val" id="pA">--</span></div>
+        <div class="pzem-pill"><span class="lbl">PF</span><span class="val" id="pPF">--</span></div>
+        <div class="pzem-pill"><span class="lbl">Hz</span><span class="val" id="pHz">--</span></div>
+      </div>
+    </section>
+
+    <section class="card" id="sc">
+      <div class="hd"><div class="t">CURRENT SESSION</div></div>
+      <div class="mid">
+        <div class="cust-status cust-off" id="statusText">--</div>
+        <div class="msg" id="sMsg">Connecting...</div>
+      </div>
+      <div class="st">
+        <div><div class="l">Session energy</div><div class="v" id="sessKwh">-</div><div class="l">kWh</div></div>
+        <div><div class="l">Session cost</div><div class="v" id="sessCost">-</div><div class="l">Rs.</div></div>
+        <div><div class="l">Rate</div><div class="v" id="rate">-</div><div class="l">Rs. / kWh</div></div>
+        <div><div class="l">Total energy</div><div class="v" id="totKwh">-</div><div class="l">kWh</div></div>
+      </div>
+    </section>
+  </div>
+
+  <section class="card">
+    <div class="hd"><div class="t" id="trT">POWER - LAST 24 HOURS</div><span class="l" id="trS"></span></div>
+    <canvas id="trend" role="img" aria-label="Power trend chart"></canvas>
+  </section>
+
+  <div class="err" id="errBox"></div>
+  <footer><span class="scan" data-t="ESP32 → E-Power · live data · Let's make things better...">ESP32 &rarr; E-Power &middot; live data &middot; Let's make things better...</span></footer>
+</div>
+
+<script>
+/* ================= CONFIG - fill once ================= */
+const ADAFRUIT_USERNAME = "Paralk"; // io.adafruit.com -> your profile name
+const TARIFF_RS_PER_KWH = 450;      // shown as the rate when no session is running (must equal the unit's tariff)
+const GAUGE_MAX_W       = 5000;
+const LIVE_MS           = 5000;     // v7.1: ESP32 publishes every 3 s, poll every 5 s
+const SLOW_MS           = 120000;   // total energy
+const TREND_MS          = 60000;    // v7.1: history chart (1 min, was 5 min)
+const STALE_AFTER_MS    = 120000;   // no new power reading for 2 min = offline
+const BACKOFF_MS        = 60000;    // pause polling this long after an Adafruit "too many requests" (429)
+const FETCH_TIMEOUT_MS  = 10000;
+/* ====================================================== */
+
+const API   = `https://io.adafruit.com/api/v2/${ADAFRUIT_USERNAME}/feeds`;
+const FEEDS = { power:'meter-power-w', total:'meter-energy-kwh',
+                sessStatus:'session-status', sessCost:'session-cost', rate:'rate',
+                live:'live-data' };
+const $ = id => document.getElementById(id);
+
+/* ---- gauge ticks (0 .. GAUGE_MAX_W) ---- */
+(function(){
+  let h = '';
+  for (let i = 0; i <= 50; i += 5) {
+    const a = (150 + 240 * i / 50) * Math.PI / 180, c = Math.cos(a), s = Math.sin(a), big = i % 10 === 0;
+    h += '<line x1="' + (110 + 90 * c).toFixed(1) + '" y1="' + (110 + 90 * s).toFixed(1) +
+         '" x2="' + (110 + (big ? 80 : 85) * c).toFixed(1) + '" y2="' + (110 + (big ? 80 : 85) * s).toFixed(1) +
+         '" stroke="' + (big ? '#19b8ff' : '#2b4f8f') + '" stroke-width="' + (big ? 2 : 1) + '"/>';
+    if (big) h += '<text x="' + (110 + 68 * c).toFixed(1) + '" y="' + (110 + 68 * s).toFixed(1) +
+         '" text-anchor="middle" dominant-baseline="middle" font-size="10" fill="#7fd8ff">' +
+         Math.round(GAUGE_MAX_W * i / 50) + '</text>';
+  }
+  $('ticks').innerHTML = h;
+})();
+
+/* ---- data access ---- */
+let pauseUntil = 0;
+async function getJSON(url){
+  const ctl = new AbortController(), tm = setTimeout(() => ctl.abort(), FETCH_TIMEOUT_MS);
+  try {
+    const r = await fetch(url, { signal: ctl.signal });
+    if (r.status === 429) { pauseUntil = Date.now() + BACKOFF_MS; throw new Error('HTTP 429'); }
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return await r.json();
+  } finally { clearTimeout(tm); }
+}
+// last data point of a feed -> {v:number|string, t:ISO time} | null
+async function last(feed){
+  const d = await getJSON(`${API}/${feed}/data?limit=1`);
+  return (d && d[0]) ? { v: d[0].value, t: d[0].created_at } : null;
+}
+function toPts(rows, tIdx, vIdx, objMode){
+  return rows.map(r => objMode ? { t: Date.parse(r.created_at), v: parseFloat(r.value) }
+                               : { t: Date.parse(r[tIdx]),      v: parseFloat(r[vIdx]) })
+             .filter(p => !isNaN(p.t) && !isNaN(p.v))
+             .sort((a, b) => a.t - b.t);
+}
+
+/* ---- state ---- */
+const S = { power:null, sessStatus:null, sessCost:null, rate:null, total:null, voltage:null, current:null, freq:null, pf:null };
+// Fetch rate on page load
+(async()=>{ try { const r = await last(FEEDS.rate); if (r) { S.rate = r; $('rate').textContent = parseFloat(r.v).toFixed(2); } } catch(e){} })();
+let TREND = { pts:[], title:'POWER - LAST 24 HOURS', sub:'' };
+let lastStamp = null, lastChange = 0, failCount = 0, lastTrendAt = 0;
+
+function isOnline(){
+  if (!S.power) return false;
+  if (S.power.t !== lastStamp) { if (lastStamp !== null) lastChange = Date.now(); lastStamp = S.power.t; }
+  const byStamp  = Date.now() - Date.parse(S.power.t);              // wrong if THIS device's clock is off
+  const byChange = lastChange ? Date.now() - lastChange : Infinity; // clock-independent
+  return byStamp < STALE_AFTER_MS || byChange < STALE_AFTER_MS;
+}
+
+/* ---- rendering ---- */
+const PILL = { IDLE:['AVAILABLE','cust-idle','No active session'], CHARGING:['CHARGING','cust-charging','Charging in progress'],
+               STOPPED:['STOPPED','cust-stopped','\uD83D\uDDA8\uFE0F Waiting for receipt print'], INTERRUPTED:['INTERRUPTED','cust-stopped','Power was interrupted'] };
+const TH = { 'cust-idle':'ok', 'cust-charging':'blue', 'cust-stopped':'warn' };
+
+function render(){
+  const online = isOnline();
+  $('dotc').className = 'dot' + (online ? '' : ' off');
+  $('statTxt').textContent = !S.power ? (failCount ? 'No connection' : 'Connecting...') : (online ? 'LIVE' : 'OFFLINE');
+  $('pc').classList.toggle('stale', !online);
+
+  /* dial: shows real power only while CHARGING, otherwise returns to 0 (animated in the frame loop) */
+  const pw = S.power ? parseFloat(S.power.v) : NaN;
+  const stNow = S.sessStatus ? String(S.sessStatus.v).toUpperCase() : '';
+  DIAL.hasData = !!S.power;
+  DIAL.target = (online && stNow === 'CHARGING' && !isNaN(pw)) ? Math.min(Math.max(pw, 0), GAUGE_MAX_W) : 0;
+
+  /* v7.1: PZEM pills */
+  $('pV').textContent = S.voltage ? parseFloat(S.voltage.v).toFixed(1) : '--';
+  $('pA').textContent = S.current ? parseFloat(S.current.v).toFixed(2) : '--';
+  $('pPF').textContent = S.pf ? parseFloat(S.pf.v).toFixed(2) : '--';
+  $('pHz').textContent = S.freq ? parseFloat(S.freq.v).toFixed(1) : '--';
+
+  /* session card */
+  const st = S.sessStatus ? String(S.sessStatus.v).toUpperCase() : '';
+  const idle = st === 'IDLE';
+  const m = online ? (PILL[st] || ['-', 'cust-off', '']) : ['OFFLINE', 'cust-off', 'Unit is not sending data'];
+  const th = online ? (TH[m[1]] || '') : '';
+  $('sc').className = 'card' + (th ? ' th-' + th : '') + (online ? '' : ' stale');
+  $('statusText').className = 'cust-status ' + m[1];
+  $('statusText').textContent = m[0];
+  $('sMsg').textContent = m[2];
+
+  const sc = S.sessCost ? parseFloat(S.sessCost.v) : NaN;
+  const rt = S.rate ? parseFloat(S.rate.v) : NaN;
+  // session-energy derived from cost/rate (saves 1 feed)
+  const sk = (!isNaN(sc) && !isNaN(rt) && rt > 0) ? sc / rt : NaN;
+  // no session running -> do not show the previous customer's numbers
+  $('sessKwh').textContent  = (idle || isNaN(sk)) ? '-' : sk.toFixed(3);
+  $('sessCost').textContent = (idle || isNaN(sc)) ? '-' : sc.toFixed(2);
+
+  // rate from feed (locked tariff); '-' if not available
+  $('rate').textContent = !isNaN(rt) ? rt.toFixed(2) : '-';
+
+  const tk = S.total ? parseFloat(S.total.v) : NaN;
+  $('totKwh').textContent = isNaN(tk) ? '-' : tk.toFixed(3);
+
+  const ts = S.power ? (lastChange || Date.parse(S.power.t)) : NaN, ag = (Date.now() - ts) / 1000;
+  $('age').textContent = (!isNaN(ts) && ag >= 0 && ag < 86400)
+    ? 'Updated ' + (ag < 90 ? String(Math.round(ag)).padStart(2,'0') + ' s ago' : ag < 5400 ? Math.round(ag / 60) + ' min ago' : Math.round(ag / 3600) + ' h ago')
+    : '-';
+}
+
+/* ---- dial animation: smooth easing + trailing glow ---- */
+const DIAL = { cur:0, trail:0, target:0, hasData:false, last:performance.now(), drawn:null };
+const DIAL_TAU = 1100, TRAIL_TAU = 2000, TRAIL_SLICES = 14, ARC_R = 96, SECTOR_R = 84;
+const trailEl = $('trail'), slices = [];
+for (let i = 0; i < TRAIL_SLICES; i++) {
+  const el = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  el.setAttribute('fill', '#19b8ff'); el.setAttribute('opacity', '0');
+  trailEl.appendChild(el); slices.push(el);
+}
+const angOf = v => 150 + 240 * Math.min(Math.max(v / GAUGE_MAX_W, 0), 1);
+const pt = a => { const r = a * Math.PI / 180; return (110 + SECTOR_R * Math.cos(r)).toFixed(2) + ' ' + (110 + SECTOR_R * Math.sin(r)).toFixed(2); };
+
+function drawDial(){
+  const aC = angOf(DIAL.cur), aT = angOf(DIAL.trail), gap = aT - aC;
+  $('beam').setAttribute('transform', 'rotate(' + aC.toFixed(2) + ' 110 110)');
+  const hr = aC * Math.PI / 180;
+  $('head').setAttribute('cx', (110 + ARC_R * Math.cos(hr)).toFixed(2)); $('head').setAttribute('cy', (110 + ARC_R * Math.sin(hr)).toFixed(2));
+  $('gArc').setAttribute('stroke-dasharray', ((aC - 150) / 240 * 402.1).toFixed(1) + ' 402.1');
+  $('gW').textContent = DIAL.hasData ? Math.round(DIAL.cur).toLocaleString() : '-';
+  slices.forEach((el, i) => {
+    if (Math.abs(gap) < 0.4) { el.setAttribute('opacity', '0'); return; }
+    const a0 = aC + gap * i / TRAIL_SLICES, a1 = aC + gap * (i + 1) / TRAIL_SLICES;
+    const lo = Math.min(a0, a1), hi = Math.max(a0, a1);
+    el.setAttribute('d', 'M110 110 L' + pt(lo) + ' A' + SECTOR_R + ' ' + SECTOR_R + ' 0 0 1 ' + pt(hi) + ' Z');
+    el.setAttribute('opacity', (0.55 * Math.pow(1 - i / TRAIL_SLICES, 1.6)).toFixed(3));
+  });
+}
+function frame(now){
+  const dt = Math.min(now - DIAL.last, 100); DIAL.last = now;
+  DIAL.cur += (DIAL.target - DIAL.cur) * (1 - Math.exp(-dt / DIAL_TAU));
+  if (Math.abs(DIAL.target - DIAL.cur) < 0.5) DIAL.cur = DIAL.target;
+  DIAL.trail += (DIAL.cur - DIAL.trail) * (1 - Math.exp(-dt / TRAIL_TAU));
+  if (Math.abs(DIAL.cur - DIAL.trail) < 0.5) DIAL.trail = DIAL.cur;
+  const key = DIAL.cur + '|' + DIAL.trail + '|' + DIAL.hasData;
+  if (key !== DIAL.drawn) { DIAL.drawn = key; drawDial(); }
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+function drawTrend(){
+  const c = $('trend'), ctx = c.getContext('2d');
+  const dpr = window.devicePixelRatio || 1, W = c.clientWidth, H = c.clientHeight;
+  if (!W || !H) return;
+  c.width = W * dpr; c.height = H * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, W, H);
+  $('trT').textContent = TREND.title; $('trS').textContent = TREND.sub;
+  const pts = TREND.pts;
+  ctx.font = '11px system-ui,sans-serif';
+  if (pts.length < 2) { ctx.fillStyle = '#5f7699'; ctx.fillText('Not enough history yet', 12, H / 2); return; }
+  const L = 44, R = 10, T = 12, B = 22, w = W - L - R, h = H - T - B;
+  const vmax = Math.max(500, Math.ceil(Math.max(...pts.map(p => p.v)) / 500) * 500);
+  const t0 = pts[0].t, t1 = pts[pts.length - 1].t, span = Math.max(1, t1 - t0);
+  const X = t => L + (t - t0) / span * w, Y = v => T + h - (v / vmax) * h;
+  ctx.strokeStyle = '#12306b'; ctx.fillStyle = '#8fa6c8'; ctx.lineWidth = 1; ctx.textAlign = 'right';
+  for (let i = 0; i <= 4; i++) {
+    const y = T + h * i / 4; ctx.beginPath(); ctx.moveTo(L, y); ctx.lineTo(W - R, y); ctx.stroke();
+    ctx.fillText(Math.round(vmax * (1 - i / 4)) + ' W', L - 6, y + 4);
+  }
+  ctx.textAlign = 'center';
+  for (let i = 0; i <= 4; i++) {
+    const t = t0 + span * i / 4, d = new Date(t);
+    ctx.fillText(String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'), L + w * i / 4, H - 6);
+  }
+  const g = ctx.createLinearGradient(0, T, 0, T + h);
+  g.addColorStop(0, 'rgba(25,184,255,.45)'); g.addColorStop(1, 'rgba(25,184,255,0)');
+  ctx.beginPath(); ctx.moveTo(X(pts[0].t), Y(0));
+  pts.forEach(p => ctx.lineTo(X(p.t), Y(p.v)));
+  ctx.lineTo(X(t1), Y(0)); ctx.closePath(); ctx.fillStyle = g; ctx.fill();
+  // v7.1: segmented colors with neon glow (normal=blue, network gap=yellow, power cut=red)
+  const GAP_MS = 30000; // 30s gap = network issue
+  let segStart = 0;
+  function segColor(p, prev) {
+    if (p.s === 'INTERRUPTED') return { c: '#ef4444', glow: '#ef4444' }; // power cut - red
+    if (prev && (p.t - prev.t) > GAP_MS) return { c: '#fbbf24', glow: '#fbbf24' }; // network gap - yellow
+    return { c: '#19b8ff', glow: '#19b8ff' }; // normal - blue
+  }
+  for (let i = 1; i <= pts.length; i++) {
+    const prev = pts[i-1], cur = pts[i];
+    const colPrev = segColor(prev, i > 1 ? pts[i-2] : null);
+    const colCur = cur ? segColor(cur, prev) : colPrev;
+    // If color changes or end, draw segment
+    if (!cur || colCur.c !== colPrev.c) {
+      ctx.beginPath();
+      for (let j = segStart; j < i; j++) {
+        const p = pts[j];
+        j === segStart ? ctx.moveTo(X(p.t), Y(p.v)) : ctx.lineTo(X(p.t), Y(p.v));
+      }
+      ctx.strokeStyle = colPrev.c; ctx.lineWidth = 2;
+      ctx.shadowColor = colPrev.glow; ctx.shadowBlur = 10; ctx.stroke(); ctx.shadowBlur = 0;
+      segStart = i;
+      if (cur && colCur.c !== colPrev.c) { segStart = i - 1; } // overlap for continuity
+    }
+  }
+  const lp = pts[pts.length - 1];
+  const lpCol = segColor(lp, pts.length > 1 ? pts[pts.length-2] : null);
+  ctx.beginPath(); ctx.arc(X(lp.t), Y(lp.v), 4, 0, 6.2832);
+  ctx.fillStyle = lpCol.c; ctx.shadowColor = lpCol.glow; ctx.shadowBlur = 12; ctx.fill(); ctx.shadowBlur = 0;
+}
+
+/* ---- refresh cycles ----
+   Adafruit IO free plan allows ~30 requests/min. Request budget here:
+   idle      : power + status every 15 s  = 8/min
+   charging  : + energy + cost every 15 s = 16/min
+   plus total energy (every 2 min) and the chart (every 5 min).
+   Polling pauses while the tab is hidden and backs off for 60 s after a 429. */
+function showErr(msg){ const b = $('errBox'); b.style.display = msg ? 'block' : 'none'; b.textContent = msg || ''; }
+const canPoll = () => !document.hidden && Date.now() >= pauseUntil;
+
+function take(res, keys){
+  let ok = 0;
+  res.forEach((r, i) => { if (r.status === 'fulfilled') { ok++; if (r.value) S[keys[i]] = r.value; } });
+  return ok;
+}
+
+let liveBusy = false, slowBusy = false, trendBusy = false;
+
+let lastSt = '';
+async function refreshLive(){
+  if (!canPoll() || liveBusy) return;
+  liveBusy = true;
+  try {
+    // v7.0: try combined JSON packet first (single fetch for all data + PZEM)
+    try {
+      const live = await last(FEEDS.live);
+      if (live && live.v) {
+        const d = JSON.parse(live.v);
+        const now = new Date().toISOString();
+        if (d.power !== undefined) S.power = { v: d.power, t: now };
+        if (d.status !== undefined) S.sessStatus = { v: d.status, t: now };
+        if (d.cost !== undefined) S.sessCost = { v: d.cost, t: now };
+        if (d.rate !== undefined) S.rate = { v: d.rate, t: now };
+        if (d.energy !== undefined) S.total = { v: d.energy, t: now };
+        // PZEM live electrical data
+        if (d.voltage !== undefined) S.voltage = { v: d.voltage, t: now };
+        if (d.current !== undefined) S.current = { v: d.current, t: now };
+        if (d.freq !== undefined) S.freq = { v: d.freq, t: now };
+        if (d.pf !== undefined) S.pf = { v: d.pf, t: now };
+        failCount = 0;
+        showErr('');
+        lastSt = d.status ? String(d.status).toUpperCase() : '';
+        render();
+        return;
+      }
+    } catch (e) { /* fall back to individual feeds */ }
+    let keys = ['power', 'sessStatus'];
+    const ok = take(await Promise.allSettled(keys.map(k => last(FEEDS[k]))), keys);
+    const st = S.sessStatus ? String(S.sessStatus.v).toUpperCase() : '';
+    if (ok > 0 && st !== 'IDLE') {          // session numbers are only needed while a session exists
+      keys = ['sessCost'];
+      take(await Promise.allSettled(keys.map(k => last(FEEDS[k]))), keys);
+      // rate: fetch once per session (on IDLE->active transition)
+      if (lastSt !== st) {
+        try { const r = await last(FEEDS.rate); if (r) S.rate = r; } catch (e) {}
+      }
+    }
+    lastSt = st;
+    if (ok === 0) failCount++; else failCount = 0;
+    showErr(failCount >= 2 ? 'Connection problem. Retrying...' : '');
+  } finally { liveBusy = false; }
+  render();
+}
+async function refreshSlow(){
+  if (!canPoll() || slowBusy) return;
+  slowBusy = true;
+  try { const r = await last(FEEDS.total); if (r) S.total = r; } catch (e) {}
+  finally { slowBusy = false; }
+  render();
+}
+async function refreshTrend(){
+  if (!canPoll() || trendBusy) return;
+  trendBusy = true;
+  try {
+    try {   // v7.1: try live-data JSON history first (parse power from JSON packets)
+      const rows = await getJSON(`${API}/${FEEDS.live}/data?limit=100`);
+      const pts = [];
+      for (const r of (rows || [])) {
+        try {
+          const d = JSON.parse(r.value);
+          if (d.power !== undefined) {
+            pts.push({ t: Date.parse(r.created_at), v: parseFloat(d.power), s: d.status || 'UNKNOWN' });
+          }
+        } catch (e) {}
+      }
+      const clean = pts.filter(p => !isNaN(p.t) && !isNaN(p.v)).sort((a,b) => a.t - b.t);
+      if (clean.length >= 2) { TREND = { pts: clean, title: 'POWER - LIVE-DATA JSON', sub: 'from combined packet' }; lastTrendAt = Date.now(); drawTrend(); return; }
+    } catch (e) {}
+    try {   // 24 h, 30-minute averages (Adafruit chart API)
+      const j = await getJSON(`${API}/${FEEDS.power}/data/chart?hours=24&resolution=30`);
+      const pts = toPts(j.data || [], 0, 1, false);
+      if (pts.length >= 2) { TREND = { pts, title: 'POWER - LAST 24 HOURS', sub: '30-minute average' }; lastTrendAt = Date.now(); drawTrend(); return; }
+    } catch (e) {}
+    try {   // fallback: most recent readings
+      const d = await getJSON(`${API}/${FEEDS.power}/data?limit=96`);
+      const pts = toPts(d, 0, 0, true);
+      TREND = { pts, title: 'POWER - RECENT READINGS', sub: 'last ' + pts.length + ' readings' };
+      lastTrendAt = Date.now();
+    } catch (e) { if (!TREND.pts.length) TREND = { pts: [], title: 'POWER - LAST 24 HOURS', sub: '' }; }
+    drawTrend();
+  } finally { trendBusy = false; }
+}
+
+let rz;
+window.addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(drawTrend, 150); });
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) return;
+  refreshLive();
+  setTimeout(refreshSlow, 1000);
+  if (Date.now() - lastTrendAt > TREND_MS) setTimeout(refreshTrend, 2000);
+});
+
+refreshLive();
+setTimeout(refreshSlow, 1500);     // staggered start: no burst of requests
+setTimeout(refreshTrend, 3000);
+setInterval(refreshLive, LIVE_MS);
+setInterval(refreshSlow, SLOW_MS);
+setInterval(refreshTrend, TREND_MS);
+setInterval(render, 1000);         // keeps "Updated N s ago" ticking
+</script>
+</body>
+</html>
