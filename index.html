@@ -455,18 +455,56 @@ let rz;
 window.addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(drawTrend, 150); });
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) return;
+  if (!window.__unlocked) return;   // password gate: no fetching before unlock
   refreshLive();
   setTimeout(refreshSlow, 1000);
   if (Date.now() - lastTrendAt > TREND_MS) setTimeout(refreshTrend, 2000);
 });
 
-refreshLive();
-setTimeout(refreshSlow, 1500);     // staggered start: no burst of requests
-setTimeout(refreshTrend, 3000);
-setInterval(refreshLive, LIVE_MS);
-setInterval(refreshSlow, SLOW_MS);
-setInterval(refreshTrend, TREND_MS);
-setInterval(render, 1000);         // keeps "Updated N s ago" ticking
+// Password gate (added 2026-10-21): the app boots ONLY after unlock - no Adafruit
+// requests are made before the correct password is entered on this device.
+function __boot(){
+  refreshLive();
+  setTimeout(refreshSlow, 1500);     // staggered start: no burst of requests
+  setTimeout(refreshTrend, 3000);
+  setInterval(refreshLive, LIVE_MS);
+  setInterval(refreshSlow, SLOW_MS);
+  setInterval(refreshTrend, TREND_MS);
+  setInterval(render, 1000);         // keeps "Updated N s ago" ticking
+}
+</script>
+
+<div id="gate" style="position:fixed;inset:0;z-index:9999;background:#050a18;display:flex;align-items:center;justify-content:center;font-family:'Segoe UI',Arial,sans-serif">
+  <div style="text-align:center;padding:36px 30px;border:1px solid #19b8ff;border-radius:16px;box-shadow:0 0 34px rgba(25,184,255,.35);max-width:320px;width:88%">
+    <div style="color:#19b8ff;font-size:20px;font-weight:800;letter-spacing:1px;margin-bottom:6px">EV CHARGER</div>
+    <div style="color:#8fa6c8;font-size:13px;letter-spacing:2px;margin-bottom:22px">LIVE MONITOR</div>
+    <input id="gatePw" type="password" placeholder="Password" autocomplete="current-password"
+      style="width:100%;box-sizing:border-box;padding:12px;border-radius:10px;border:1px solid #2a4a66;background:#0a1226;color:#eaf3ff;font-size:16px;text-align:center;margin-bottom:12px">
+    <button id="gateBtn" style="width:100%;padding:12px;border:none;border-radius:10px;background:#19b8ff;color:#03121f;font-size:16px;font-weight:700;cursor:pointer">Unlock</button>
+    <div id="gateErr" style="color:#ff5468;font-size:13px;margin-top:12px;min-height:16px"></div>
+  </div>
+</div>
+<script>
+(function(){
+  var H='ef797c8118f02dfb649607dd5d3f8c7623048c9c063d532cc95c5ed7a898a64f';  // SHA-256 of the view password
+  var K='epower_live_hash';
+  var g=document.getElementById('gate');
+  function unlock(){ window.__unlocked=true; g.style.display='none'; if(window.__boot) window.__boot(); }
+  try{ if(localStorage.getItem(K)===H){ unlock(); return; } }catch(e){}
+  var inp=document.getElementById('gatePw'), err=document.getElementById('gateErr');
+  async function tryPw(){
+    var v=inp.value; if(!v) return;
+    try{
+      var buf=await crypto.subtle.digest('SHA-256', new TextEncoder().encode(v));
+      var hex=Array.prototype.map.call(new Uint8Array(buf), function(b){ return b.toString(16).padStart(2,'0'); }).join('');
+      if(hex===H){ try{ localStorage.setItem(K,H); }catch(e){} unlock(); }
+      else{ err.textContent='Wrong password'; inp.select(); }
+    }catch(e){ err.textContent='Error: '+e.message; }
+  }
+  document.getElementById('gateBtn').addEventListener('click', tryPw);
+  inp.addEventListener('keydown', function(e){ if(e.key==='Enter') tryPw(); });
+  inp.focus();
+})();
 </script>
 </body>
 </html>
